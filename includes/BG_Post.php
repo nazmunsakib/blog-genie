@@ -30,6 +30,6 @@ class BG_Post {
             'post_category' => array(1) // Default category
         );
 
-        return wp_insert_post($new_post);
+        wp_insert_post($new_post);
     }
 }

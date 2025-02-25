@@ -10,38 +10,83 @@ defined('ABSPATH') || die();
 
 class Api {
 
+    protected $key;
+    protected $host; 
+
 	/**
 	 * Class constructor.
 	 */
 	public function __construct() {
-        $this->add_hooks();
-	}
-
-	private function add_hooks() {
-
+        $this->key  = get_option('wp_auto_blogging_api_key', '');
+        $this->host = 'https://api-inference.huggingface.co/models/facebook/bart-large-cnn';
 	}
 
     public function generate_content($topic) {
-        $api_url = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn";
-        $headers = array(
-            "Authorization: Bearer YOUR_HUGGINGFACE_API_KEY",
-            "Content-Type: application/json"
-        );
-        
-        $data = json_encode(array("inputs" => "Write a blog about: " . $topic));
+        if (empty($this->key)) {
+            return array("error" => "Missing API key.");
+        }
     
-        $ch = curl_init($api_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        $data = json_encode(array(
+            "inputs"        =>  "Write a blog about: " . $topic,
+            "parameters"    => array(
+                "max_length"    => 1024,
+                "min_length"    => 500,
+                "temperature"   => 0.7,
+                "top_p"         => 0.9
+            )
+        ));
     
-        $response = curl_exec($ch);
-        curl_close($ch);
+        $curl = curl_init();
     
-        $result = json_decode($response, true);
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => $this->host,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING => "",
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 60,  // Increased timeout to 60 seconds
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => "POST",
+            CURLOPT_POSTFIELDS => $data,
+            CURLOPT_HTTPHEADER => array(
+                "Content-Type: application/json",
+                "Authorization: Bearer " . $this->key
+            ),
+        ));
     
-        return isset($result[0]['generated_text']) ? $result[0]['generated_text'] : "AI failed to generate content.";
+        // Debugging: Log the request
+        error_log("Sending API request to: " . $this->host);
+        error_log("Request payload: " . $data);
+    
+        $response   = curl_exec($curl);
+        $http_code  = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($curl);
+        curl_close($curl);
+    
+        // Debugging: Log the response
+        error_log("API response: " . $response);
+        error_log("HTTP code: " . $http_code);
+        error_log("cURL error: " . $curl_error);
+    
+        // Handle cURL errors
+        if ($curl_error) {
+            return array("error" => "cURL Error: " . $curl_error);
+        }
+    
+        // Handle HTTP errors
+        if ($http_code !== 200) {
+            return array("error" => "API Error: Received HTTP code " . $http_code);
+        }
+    
+        // Decode JSON response
+        $response_data = json_decode($response, true);
+    
+        // Validate JSON response
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return array("error" => "Invalid JSON response from API.");
+        }
+    
+        return array("success" => true, "data" => $response_data);
     }
 
 
